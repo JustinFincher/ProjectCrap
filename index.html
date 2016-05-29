@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <title></title>
+    <style>
+        body {
+            margin: 0;
+            background-color: black;
+        }
+        canvas { width: 100%; height: 100%;}
+    </style>
+    <script src="//cdn.bootcss.com/jquery/2.2.4/jquery.min.js"></script>
+    <script type="application/javascript" src="js/jquery-ui.min.js"></script>
+</head>
+<body>
+<img id="crashimage" src="img/crash.png" style="position: fixed;height:100%;top: 50%;left: 50%;transform: translate(-50%, -50%); visibility: hidden;">
+<img id="thuglife" src="img/thuglifeglasses.gif" style="position: fixed;height:3%;top: 40%;left: 50%;transform: translate(-50%, -50%); visibility: hidden;">
+<div style="color: white;position: fixed;right: 0;bottom: 0; font-size: 0.2em;opacity: 0.5; font-family: Helvetica, Arial, Sans-Serif;">
+    <a href="http://www.justzht.com/" style="color: white" target="_blank">About.</a>
+</div>
+<script src="js/three.js"></script>
+
+<script src="js/Detector.js"></script>
+<script src="js/libs/stats.min.js"></script>
+<script src="js/threex.domevents.js"></script>
+<script src="js/threex.linkify.js"></script>
+<script src="js/Tween.js" type="application/javascript"></script>
+
+<script src="js/shaders/CopyShader.js" type="application/javascript"></script>
+<script src="js/shaders/DigitalGlitch.js" type="application/javascript"></script>
+<script src="js/shaders/RGBShiftShader.js"></script>
+
+<script src="js/postprocessing/EffectComposer.js" type="application/javascript"></script>
+<script src="js/postprocessing/RenderPass.js" type="application/javascript"></script>
+<script src="js/postprocessing/MaskPass.js" type="application/javascript"></script>
+<script src="js/postprocessing/ShaderPass.js" type="application/javascript"></script>
+<script src="js/postprocessing/GlitchPass.js" type="application/javascript"></script>
+<script src="js/postprocessing/ManualMSAARenderPass.js"></script>
+
+<script src="js/controls/DeviceOrientationControls.js"></script>
+
+<script>
+    if ( ! Detector.webgl ) Detector.addGetWebGLMessage();
+
+    var scene,camera,renderer;
+    var backgroundCube;
+    var stats;
+    var fontLoader;
+    var threexDomEvents;
+    var whiteMaterial;
+    var whiteAnimtingMaterial;
+    var clearMaterial;
+    var projectTexts = ['Hi','There'];
+    var selfIntroductionTexts = ["I'm Justin",'Fincher. Student,','Coder and Designer'];
+    var IntroTextObject,selfIntroductionTextObject;
+    var glitchPass, composer,msaaRenderPass,rgbShiftPass;
+    var shouldAnimateBeginText = false;
+
+    var audioListener;
+    var audioLoader;
+    var spaceAmbientSound;
+    var deviceControl;
+
+    var selfIntroductionTextObjects;
+    var loadedFont;
+
+    var gasPlanetObject;
+    var loaderManager;
+
+    var textureLoader;
+
+    var particles;
+    init();
+    initPostProcessing();
+    showStats();
+    function init() {
+
+        scene = new THREE.Scene();
+        //scene.fog = new THREE.FogExp2( 0xFFFFFF, 0.004 );
+        camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.1, 300000);
+        checkCameraPosZVisible();
+
+        renderer = new THREE.WebGLRenderer({ alpha: true });
+        renderer.setClearColor( 0xffffff, 0);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        threexDomEvents = new THREEx.DomEvents(camera,renderer.domElement);
+
+        var loaderManager = new THREE.LoadingManager();
+        loaderManager.onProgress = function ( item, loaded, total )
+        {
+            console.log( item, loaded, total );
+        };
+
+        fontLoader = new THREE.FontLoader(loaderManager);
+        fontLoader.load( 'font/KeepCalm.typeface.json', function ( font )
+        {
+            loadedFont = font;
+            layoutText();
+        });
+
+        textureLoader = new THREE.TextureLoader(loaderManager);
+
+        layoutBackGroundBox();
+        stats = new Stats();
+        document.body.appendChild( stats.dom );
+        window.addEventListener('resize', onWindowResize, false);
+        window.addEventListener( 'mousedown', onDocumentMouseDown, false );
+
+        var particeGeometry = new THREE.Geometry();
+        for ( i = 0; i < 80000; i ++ )
+        {
+            var vertex = new THREE.Vector3();
+            var x = Math.random() * 2 - 1;
+            var y = Math.random() * 2 - 1;
+            var z = Math.random() * 2 - 1;
+            var sq = Math.sqrt(x*x + y*y + z*z);
+            var ram = Math.random();
+            vertex.x = x / sq * 8000 * ram;
+            vertex.y = y / sq * 8000 * ram;
+            vertex.z = z / sq * 8000 * ram;
+            particeGeometry.vertices.push( vertex );
+        }
+        var parameters = [
+            [ [1, 1, 0.5], 6 ],
+        ];
+        var color,size;
+        for ( var i = 0; i < parameters.length; i ++ ) {
+            color = parameters[i][0];
+            size  = parameters[i][1];
+            particles = new THREE.Points( particeGeometry, new THREE.PointsMaterial( { size: size }));
+//                particles.rotation.x = Math.random() * 6;
+//                particles.rotation.y = Math.random() * 6;
+//                particles.rotation.z = Math.random() * 6;
+            particles.position.copy(new THREE.Vector3(-3000,0,0));
+            scene.add( particles );
+        }
+        deviceControl = new THREE.DeviceOrientationControls( particles );
+
+        shouldAnimateBeginText = true;
+
+        audioListener = new THREE.AudioListener();
+        camera.add( audioListener );
+        audioLoader = new THREE.AudioLoader();
+        spaceAmbientSound = new THREE.Audio( audioListener );
+//        audioLoader.load(
+//                // resource URL
+//                'audio/DeepSpaceAmbient_extrasmall.aac',
+//                // Function when resource is loaded
+//                function ( audioBuffer ) {
+//                    // set the audio object buffer to the loaded object
+//                    spaceAmbientSound.setBuffer( audioBuffer );
+//                },
+//                // Function called when download progresses
+//                function ( xhr ) {
+//                    console.log( (xhr.loaded / xhr.total * 100) + '% loaded' );
+//                    if (xhr.loaded/xhr.total > 0.5)
+//                    {
+//                        shouldAnimateBeginText = true;
+//                    }
+//                },
+//                function ( xhr ) {
+//                    //console.log( 'An error happened' );
+//                }
+//        );
+    }
+    var textObjectsArray;
+    function layoutText()
+    {
+        var nextVector = new THREE.Vector3(0,0,0);
+        IntroTextObject = new THREE.Object3D();
+        scene.add(IntroTextObject);
+        whiteMaterial = new THREE.MeshBasicMaterial({color: 0xFFFFFF});
+        whiteMaterial.transparent = true;
+        whiteAnimtingMaterial = new THREE.MeshBasicMaterial({color: 0xFFFFFF});
+        whiteAnimtingMaterial.transparent = true;
+        clearMaterial = new THREE.MeshBasicMaterial({color: 0xFFFFFF});
+        clearMaterial.transparent = true;
+        clearMaterial.side = THREE.BackSide;
+        clearMaterial.opacity = 0;
+
+        textObjectsArray = new Array();
+        for (var i = 0; i < projectTexts.length; i++)
+        {
+            var geometry = new THREE.TextGeometry( projectTexts[i], {
+                font: loadedFont,
+                size: 3,
+                height: 0.1,
+                curveSegments: 3
+            });
+            geometry.computeBoundingBox();
+            var height = geometry.boundingBox.max.y - geometry.boundingBox.min.y + 1;
+            var textObject = new THREE.Mesh(geometry, whiteMaterial);
+            nextVector.setY(nextVector.y - height);
+            IntroTextObject.add(textObject);
+            textObject.position.copy(nextVector);
+            textObjectsArray[i] = textObject;
+        }
+
+        var clickToBeginBoxGeometry = new THREE.BoxGeometry(12,2,2);
+        var clickToBeginBoxObject = new THREE.Mesh(clickToBeginBoxGeometry, clearMaterial);
+        IntroTextObject.add(clickToBeginBoxObject);
+        clickToBeginBoxObject.position.copy(new THREE.Vector3(6,-12.5,0));
+        var clickToBeginTextGeometry = new THREE.TextGeometry( 'Click To Begin', {
+            font: loadedFont,
+            size: 1,
+            height: 0.01,
+            curveSegments: 1
+        });
+        clickToBeginTextGeometry.computeBoundingBox();
+        var clickToBeginTextObject = new THREE.Mesh(clickToBeginTextGeometry, whiteAnimtingMaterial);
+        IntroTextObject.add(clickToBeginTextObject);
+        textObjectsArray[projectTexts.length] = clickToBeginTextObject;
+        var height = clickToBeginTextGeometry.boundingBox.max.y - clickToBeginTextGeometry.boundingBox.min.y + 3;
+        nextVector.setY(nextVector.y - height);
+        clickToBeginTextObject.position.copy(nextVector);
+        textObjectsArray[projectTexts.length + 1] = clickToBeginBoxObject;
+        threexDomEvents.addEventListener(clickToBeginBoxObject, 'touchstart', function(event)
+        {
+            introButtonClicked()
+        }, false);
+        threexDomEvents.addEventListener(clickToBeginBoxObject, 'mousedown', function(event)
+        {
+            introButtonClicked()
+        }, false);
+        IntroTextObject.userData = textObjectsArray;
+
+        IntroTextObject.position.copy(new THREE.Vector3(-9.5,+9,0));
+        animateText();
+    }
+    function introButtonClicked()
+    {
+        // play the audio
+        //spaceAmbientSound.play();
+
+        shouldAnimateBeginText = false;
+        var position = { x : camera.position.x, y: camera.position.y ,z:camera.position.z};
+        var target = { x : 0, y: 0 ,z:150};
+        var tween = new TWEEN.Tween(position).to(target, 5000);
+        tween.easing(TWEEN.Easing.Quartic.InOut);
+        tween.onUpdate(function()
+        {
+            camera.position.x = position.x;
+            camera.position.y = position.y;
+            camera.position.z = position.z;
+        });
+        tween.onComplete(function ()
+        {
+            selfIntroductionTextObjects = new Array();
+            glitchPass.goWild = false;
+            glitchPass.goSlience = true;
+            var geometry = new THREE.TextGeometry( "WELCOME TO MY PORTAL.", {
+                font: loadedFont,
+                size: 10,
+                height: 0.01,
+                curveSegments: 3
+            });
+            var textObject = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({color: 0xFFFFFF}));
+            scene.add(textObject);
+            textObject.position.copy(new THREE.Vector3(-105,-150,0));
+            selfIntroductionTextObjects.push(textObject);
+        })
+
+        var beginSegment = {segment:3};
+        var endSegment = {segment:1};
+        var segmentTween = new TWEEN.Tween(beginSegment).to(endSegment,3000);
+        tween.chain(segmentTween);
+        segmentTween.onUpdate(function ()
+        {
+            var segment = Math.floor(beginSegment.segment);
+            backgroundCube.geometry = new THREE.BoxGeometry( 100, 100, 100 ,segment,segment,segment);
+        });
+
+        var cameraMoveBeginVector = { x : 0, y: 0 ,z:150,alpha:1.0};
+        var cameraMoveEndVector = { x : 0, y: -30 ,z:230,alpha:0.0};
+        var cameraMoveTween = new TWEEN.Tween(cameraMoveBeginVector).to(cameraMoveEndVector,4000);
+        cameraMoveTween.easing(TWEEN.Easing.Quartic.InOut);
+        segmentTween.chain(cameraMoveTween);
+        cameraMoveTween.onUpdate(function ()
+        {
+            camera.position.x = cameraMoveBeginVector.x;
+            camera.position.y = cameraMoveBeginVector.y;
+            camera.position.z = cameraMoveBeginVector.z;
+            whiteMaterial.opacity = cameraMoveBeginVector.alpha;
+        });
+        cameraMoveTween.onComplete(function ()
+        {
+            for (var i = 0;i<textObjectsArray.length;i++)
+            {
+                removeEntity(textObjectsArray[i]);
+            }
+        });
+        cameraMoveTween.onComplete(function ()
+        {
+            selfIntroductionTextObject = new THREE.Object3D();
+            scene.add(selfIntroductionTextObject);
+
+            var nextVector = new THREE.Vector3(0,0,0);
+            for (var i = 0; i < selfIntroductionTexts.length; i++)
+            {
+                var geometry = new THREE.TextGeometry( selfIntroductionTexts[i], {
+                    font: loadedFont,
+                    size: 100,
+                    height: 0.01,
+                    curveSegments: 3
+                });
+                console.log(selfIntroductionTexts[i]);
+                geometry.computeBoundingBox();
+                var height = geometry.boundingBox.max.y - geometry.boundingBox.min.y + 1;
+                var textObject = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({color: 0xFFFFFF}));
+                nextVector.setY(nextVector.y - height);
+                selfIntroductionTextObject.add(textObject);
+                textObject.position.copy(nextVector);
+                selfIntroductionTextObjects.push(textObject);
+                console.log(nextVector.y);
+            }
+
+            selfIntroductionTextObject.position.copy(new THREE.Vector3(-1000,0,1000));
+            selfIntroductionTextObject.rotation.y = Math.PI/2;
+        });
+        var camera2MoveBeginVector = { x : 0, y: -30 ,z:230,rotationy:0};
+        var camera2MoveEndVector = { x : 800, y: -30 ,z:300,rotationy:Math.PI/2};
+        var camera2MoveTween = new TWEEN.Tween(camera2MoveBeginVector).to(camera2MoveEndVector,4000);
+        camera2MoveTween.easing(TWEEN.Easing.Quartic.InOut);
+        cameraMoveTween.chain(camera2MoveTween);
+        camera2MoveTween.onUpdate(function ()
+        {
+            camera.position.x = camera2MoveBeginVector.x;
+            camera.position.y = camera2MoveBeginVector.y;
+            camera.position.z = camera2MoveBeginVector.z;
+            camera.rotation.y = camera2MoveBeginVector.rotationy;
+        });
+        camera2MoveTween.onComplete(function ()
+        {
+            glitchPass.goSlience = true;
+
+            gasPlanetObject = new THREE.Object3D();
+            gasPlanetObject.position.copy(new THREE.Vector3(6700,-30,300));
+            var material = new THREE.MeshBasicMaterial( { color: 0xffffff,transparent:false} );
+            var gasMainGeometry = new THREE.SphereGeometry(100,20,20);
+            var gasMainMesh = new THREE.Mesh( gasMainGeometry, material );
+            gasMainMesh.position.copy(new THREE.Vector3(0,0,0));
+            gasPlanetObject.add( gasMainMesh );
+
+            var blackMaterial = new THREE.MeshBasicMaterial( { color: 0x000000,transparent:true ,wireframeLinewidth:2} );
+            var textGeometry = new THREE.TextGeometry( 'Tests', {
+                font: loadedFont,
+                size: 15,
+                height: 0.1,
+                curveSegments: 3
+            });
+            var blackTextMesh = new THREE.Mesh( textGeometry, blackMaterial );
+            blackTextMesh.position.copy(new THREE.Vector3(100,-9,60));
+            blackTextMesh.rotation.y = Math.PI/2;
+            gasPlanetObject.add( blackTextMesh );
+            scene.add(gasPlanetObject);
+        })
+        var camera3MoveBeginVector = { x : 800, y: -30 ,z:300,rotationx:0,rotationy:Math.PI/2,rotationz:0};
+        var camera3MoveEndVector = { x : 7000, y: -30 ,z:300,rotationx:0,rotationy:Math.PI/2,rotationz:0};
+        var camera3MoveTween = new TWEEN.Tween(camera3MoveBeginVector).to(camera3MoveEndVector,3000);
+        camera3MoveTween.easing(TWEEN.Easing.Quartic.InOut);
+        camera2MoveTween.chain(camera3MoveTween);
+        camera3MoveTween.delay(1500);
+        camera3MoveTween.onUpdate(function ()
+        {
+            camera.position.x = camera3MoveBeginVector.x;
+            camera.position.y = camera3MoveBeginVector.y;
+            camera.position.z = camera3MoveBeginVector.z;
+            camera.rotation.x = camera3MoveBeginVector.rotationx;
+            camera.rotation.y = camera3MoveBeginVector.rotationy;
+            camera.rotation.z = camera3MoveBeginVector.rotationz;
+        });
+        camera3MoveTween.onComplete(function ()
+        {
+            glitchPass.goSlience = false;
+//            for(var i = 0; i < selfIntroductionTextObjects.length;i++)
+//            {
+//                //console.log(i);
+//                removeEntity(selfIntroductionTextObjects[i])
+//            }
+            removeEntity(selfIntroductionTextObject);
+            removeEntity(backgroundCube);
+
+            glitchPass.renderToScreen = false;
+            rgbShiftPass.renderToScreen = true;
+        });
+
+        var rgbShift1Begin = { value:0.0};
+        var rgbShift1End = { value:0.1};
+        var rgbShift2Begin = { value:0.1};
+        var rgbShift2End = { value:0.0};
+        var rgbShift1Tween = new TWEEN.Tween(rgbShift1Begin).to(rgbShift1End,1000);
+        var rgbShift2Tween = new TWEEN.Tween(rgbShift2Begin).to(rgbShift2End,1000);
+        rgbShift1Tween.easing(TWEEN.Easing.Quartic.InOut);
+        rgbShift2Tween.easing(TWEEN.Easing.Quartic.InOut);
+        rgbShift1Tween.onUpdate(function ()
+        {
+            //console.log(rgbShift1Begin);
+            rgbShiftPass.uniforms[ 'amount' ].value = rgbShift1Begin.value;
+        });
+        rgbShift2Tween.onUpdate(function ()
+        {
+            //console.log(rgbShift2Begin);
+            rgbShiftPass.uniforms[ 'amount' ].value = rgbShift2Begin.value;
+        });
+        rgbShift2Tween.onComplete(function ()
+        {
+            glitchPass.renderToScreen = true;
+            rgbShiftPass.renderToScreen = false;
+        })
+        camera3MoveTween.chain(rgbShift1Tween);
+        rgbShift1Tween.chain(rgbShift2Tween);
+
+        var camera4MoveBeginVector = { x1 : 7000, y1: -30 ,z1:300,x2 : 6700, y2: -30 ,z2:300};
+        var camera4MoveEndVector = { x1 : 0, y1: 0 ,z1:0,x2 : -3000, y2: 0 ,z2:0};
+        var camera4MoveTween = new TWEEN.Tween(camera4MoveBeginVector).to(camera4MoveEndVector,1000);
+        camera4MoveTween.easing(TWEEN.Easing.Quartic.InOut);
+        camera4MoveTween.onUpdate(function ()
+        {
+            camera.position.x = camera4MoveBeginVector.x1;
+            camera.position.y = camera4MoveBeginVector.y1;
+            camera.position.z = camera4MoveBeginVector.z1;
+            gasPlanetObject.position.x = camera4MoveBeginVector.x2;
+            gasPlanetObject.position.y = camera4MoveBeginVector.y2;
+            gasPlanetObject.position.z = camera4MoveBeginVector.z2;
+        });
+        rgbShift2Tween.chain(camera4MoveTween);
+        var particleScale1Begin = { value:1};
+        var particleScale1End = { value:0.008};
+        var particleScale1Tween = new TWEEN.Tween(particleScale1Begin).to(particleScale1End,6000);
+        particleScale1Tween.easing(TWEEN.Easing.Quartic.In);
+        particleScale1Tween.onUpdate(function ()
+        {
+            particles.scale.x =particleScale1Begin.value;
+            particles.scale.y =particleScale1Begin.value;
+            particles.scale.z =particleScale1Begin.value;
+        });
+        camera4MoveTween.chain(particleScale1Tween);
+        particleScale1Tween.onComplete(function ()
+        {
+            deviceControl.disconnect();
+            removeEntity(particles);
+
+            gasPlanetObject.scale.x = 0.0001;
+            gasPlanetObject.scale.y = 0.0001;
+            gasPlanetObject.scale.z = 0.0001;
+            var zeroVector = new THREE.Vector3(0, 0, 0);
+            var lineMaterial = new THREE.LineBasicMaterial({
+                color: 0xffffff
+            });
+            for (var i = 0; i < 1000; i++)
+            {
+                var geometry = new THREE.Geometry();
+                geometry.vertices.push(zeroVector);
+                var x = Math.random() * 2 - 1;
+                var y = Math.random() * 2 - 1;
+                var z = Math.random() * 2 - 1;
+                var sq = Math.sqrt(x*x + y*y + z*z);
+                geometry.vertices.push(new THREE.Vector3(x / sq * 8000, y / sq * 8000, z / sq * 8000));
+                var line = new THREE.Line(geometry, lineMaterial);
+                gasPlanetObject.add(line);
+            }
+        });
+
+        var lineScale1Begin = { value:0.001};
+        var lineScale1End = { value:1};
+        var lineScale1Tween = new TWEEN.Tween(lineScale1Begin).to(lineScale1End,2000);
+        lineScale1Tween.easing(TWEEN.Easing.Quartic.Out);
+        lineScale1Tween.onUpdate(function ()
+        {
+            gasPlanetObject.scale.x =lineScale1Begin.value;
+            gasPlanetObject.scale.y =lineScale1Begin.value;
+            gasPlanetObject.scale.z =lineScale1Begin.value;
+        });
+        particleScale1Tween.chain(lineScale1Tween);
+        lineScale1Tween.onComplete(function ()
+        {
+            $("html body").animate({ backgroundColor: "#FFFFFF" }, {duration:2000,complete:function ()
+            {
+                glitchPass.goSlience = true;
+                removeEntity(gasPlanetObject);
+                document.body.style.backgroundColor = "#FFFFFF";
+                camera.rotation.y = 0;
+                $('#crashimage').css('visibility', 'visible').delay( 2000 ).queue(function() {
+                    $('#thuglife').css('visibility', 'visible');
+                });
+            }});
+        })
+
+        tween.start();
+    }
+    function removeEntity(object)
+    {
+        //console.log(object);
+        if (object.children.length > 0)
+        {
+            for (var i = 0;i < object.children.length ; i++)
+            {
+                removeEntity(object.children[i]);
+            }
+        }
+        scene.remove( object );
+
+    }
+    function initPostProcessing()
+    {
+        composer = new THREE.EffectComposer( renderer );
+        composer.addPass( new THREE.RenderPass( scene, camera ) );
+
+        rgbShiftPass = new THREE.ShaderPass( THREE.RGBShiftShader );
+        rgbShiftPass.uniforms[ 'amount' ].value = 0.1;
+        rgbShiftPass.renderToScreen = false;
+        composer.addPass( rgbShiftPass );
+
+        msaaRenderPass = new THREE.ManualMSAARenderPass( scene, camera );
+        msaaRenderPass.unbiased = false;
+        msaaRenderPass.sampleLevel = 2;
+        composer.addPass( msaaRenderPass );
+
+        glitchPass = new THREE.GlitchPass();
+        glitchPass.renderToScreen = true;
+        composer.addPass( glitchPass );
+    }
+    function layoutBackGroundBox()
+    {
+        var geometry = new THREE.BoxGeometry( 100, 100, 100 ,3,3,3);
+        var material = new THREE.MeshBasicMaterial( { color: 0x00ff00, wireframe:true } );
+        backgroundCube = new THREE.Mesh( geometry, material );
+        scene.add( backgroundCube );
+        animateBackGroundBox();
+    }
+    function onDocumentMouseDown( event )
+    {
+    }
+    function animateText()
+    {
+        requestAnimationFrame(animateText);
+        if (shouldAnimateBeginText)
+        {
+            whiteAnimtingMaterial.opacity = 1 + Math.sin(new Date().getTime() * .0025);
+        }else
+        {
+            whiteAnimtingMaterial.opacity = 0;
+        }
+    }
+    function animateBackGroundBox()
+    {
+        requestAnimationFrame(animateBackGroundBox);
+        if (backgroundCube == null)
+        {}else
+        {
+            backgroundCube.rotation.x += 0.001;
+            backgroundCube.rotation.y += 0.001;
+            backgroundCube.rotation.z += 0.001;
+        }
+    }
+    function showStats()
+    {
+        requestAnimationFrame(showStats);
+        stats.begin();
+        stats.end();
+    }
+    function render()
+    {
+        requestAnimationFrame( render );
+        renderer.render( scene, camera );
+        composer.render();
+        TWEEN.update();
+        deviceControl.update();
+        //console.log(camera.position.x,camera.position.y,camera.position.z);
+    }
+    function onWindowResize()
+    {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        //checkCameraPosZVisible();
+        camera.updateProjectionMatrix();
+        renderer.setSize( window.innerWidth, window.innerHeight );
+        composer.setSize( window.innerWidth, window.innerHeight );
+    }
+    function checkCameraPosZVisible()
+    {
+        if (window.innerWidth < 1920)
+        {
+            camera.position.z = 20 + (1920 - window.innerWidth)/1920 * 20;
+        }
+    }
+    render();
+</script>
+</body>
+</html>
