@@ -16,7 +16,7 @@
     <script type="application/javascript" src="js/jquery-ui.min.js"></script>
 </head>
 <body>
-<img id="crashimage" src="img/crash.png" style="position: fixed;height:100%;top: 50%;left: 50%;transform: translate(-50%, -50%); visibility: hidden;">
+<img id="crashimage" onclick="crashImageClicked()" src="img/crash.png" style="position: fixed;height:100%;top: 50%;left: 50%;transform: translate(-50%, -50%); visibility: hidden;">
 <img id="thuglife" src="img/thuglifeglasses.gif" style="position: fixed;height:3%;top: 40%;left: 50%;transform: translate(-50%, -50%); visibility: hidden;">
 <div style="color: white;position: fixed;right: 0;bottom: 0; font-size: 0.2em;opacity: 0.5; font-family: Helvetica, Arial, Sans-Serif;">
     <a href="http://www.justzht.com/" style="color: white" target="_blank">About.</a>
@@ -587,6 +587,10 @@
         {
             camera.position.z = 20 + (1920 - window.innerWidth)/1920 * 20;
         }
+    }
+    function crashImageClicked()
+    {
+        window.location.href = 'http://www.justzht.com/';
     }
     render();
 </script>
